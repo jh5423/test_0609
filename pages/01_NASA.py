@@ -5,35 +5,135 @@ import numpy as np
 import plotly.graph_objects as go
 
 # 페이지 설정
-st.set_page_config(page_title="이차곡선 방정식 모델링", layout="wide")
+st.set_page_config(page_title="기하: 이차곡선 탐구 교실", layout="wide")
 
+# --- 데이터 로딩 함수 ---
 @st.cache_data
 def fetch_neo_data():
-    """NASA API에서 소행성의 궤도 파라미터(a, e)만 추출합니다."""
     url = "https://api.nasa.gov/neo/rest/v1/neo/browse?api_key=DEMO_KEY"
     try:
         response = requests.get(url)
         data = response.json()
         neos = data.get('near_earth_objects', [])
-        
         extracted_data = []
         for neo in neos:
             orbital = neo.get('orbital_data', {})
             name = neo.get('name', 'Unknown')
             e = float(orbital.get('eccentricity', 0))
             a = float(orbital.get('semi_major_axis', 0))
-            
-            if a > 0:
-                extracted_data.append({'Name': name, 'e': e, 'a': a})
-        
+            if a > 0: extracted_data.append({'Name': name, 'e': e, 'a': a})
         df = pd.DataFrame(extracted_data)
-        
-        # 기하 수업의 쌍곡선 탐구를 위해 e > 1 데이터 추가 (a의 절댓값 사용)
         df.loc[len(df)] = {'Name': 'Oumuamua (쌍곡선 궤도)', 'e': 1.1995, 'a': 1.29}
         return df
-    except Exception as e:
-        st.error("데이터를 불러오는 중 오류가 발생했습니다.")
+    except:
         return pd.DataFrame()
+
+# --- 메인 UI ---
+st.title("🌌 기하: 이차곡선 방정식과 궤도 모델링")
+st.sidebar.header("수업 활동 선택")
+mode = st.sidebar.radio("활동 모드:", ["1. 이차곡선 생성 원리 탐구 (사전 활동)", "2. NASA 데이터 방정식 모델링"])
+
+# --- 모드 1: 사전 탐구 ---
+if mode == "1. 이차곡선 생성 원리 탐구 (사전 활동)":
+    st.subheader("🛠️ 이차곡선 생성 원리 탐구")
+    st.markdown("슬라이더를 움직여 $a$와 $e$를 변화시키며, 방정식과 궤적의 변화를 관찰해 보세요.")
+    
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        a_val = st.slider("장축의 반 (a)", 1.0, 5.0, 2.0, 0.1)
+        e_val = st.slider("이심률 (e)", 0.0, 2.0, 0.5, 0.05)
+        
+        c = a_val * e_val
+        if e_val < 1:
+            b = np.sqrt(max(0, a_val**2 - c**2))
+            st.latex(rf"\text{{타원: }} \frac{{x^2}}{{{a_val**2:.2f}}} + \frac{{y^2}}{{{b**2:.2f}}} = 1")
+        else:
+            b = np.sqrt(max(0, c**2 - a_val**2))
+            st.latex(rf"\text{{쌍곡선: }} \frac{{x^2}}{{{a_val**2:.2f}}} - \frac{{y^2}}{{{b**2:.2f}}} = 1")
+
+    with col2:
+        fig = go.Figure()
+        if e_val < 1:
+            t = np.linspace(0, 2*np.pi, 200)
+            fig.add_trace(go.Scatter(x=a_val*np.cos(t), y=b*np.sin(t), mode='lines', name='타원'))
+        else:
+            t = np.linspace(-2, 2, 200)
+            fig.add_trace(go.Scatter(x=a_val*np.cosh(t), y=b*np.sinh(t), mode='lines', name='쌍곡선'))
+            fig.add_trace(go.Scatter(x=-a_val*np.cosh(t), y=b*np.sinh(t), mode='lines', name='쌍곡선'))
+        fig.update_layout(xaxis=dict(range=[-7, 7]), yaxis=dict(range=[-5, 5], scaleanchor="x"))
+        st.plotly_chart(fig, use_container_width=True)
+
+# --- 모드 2: 데이터 모델링 ---
+else:
+    df = fetch_neo_data()
+    curve_type = st.sidebar.radio("탐색할 곡선:", ["타원 (0 < e < 1)", "쌍곡선 (e > 1)"])
+    filtered_df = df[(df['e'] > 0) & (df['e'] < 1)] if "타원" in curve_type else df[df['e'] > 1]
+    
+    selected_neo = st.sidebar.selectbox("천체 선택:", filtered_df['Name'])
+    neo = filtered_df[filtered_df['Name'] == selected_neo].iloc[0]
+    e, a = neo['e'], neo['a']
+    c = a * e
+    
+    st.subheader(f"📊 {selected_neo} 데이터 분석")
+    col1, col2 = st.columns([1, 1.2])
+    with col1:
+        if e < 1:
+            b = np.sqrt(a**2 - c**2)
+            st.latex(rf"\frac{{x^2}}{{{a**2:.4f}}} + \frac{{y^2}}{{{b**2:.4f}}} = 1")
+        else:
+            b = np.sqrt(c**2 - a**2)
+            st.latex(rf"\frac{{x^2}}{{{a**2:.4f}}} - \frac{{y^2}}{{{b**2:.4f}}} = 1")
+    with col2:
+        fig = go.Figure()
+        # 그래프 생성 로직 (위의 코드와 동일)
+        st.plotly_chart(fig, use_container_width=True)
+
+# --- 공통 탐구 질문 ---
+st.markdown("---")
+st.subheader("📝 기하 탐구 질문")
+st.markdown("""
+1. 타원 위의 점 $P(x, y)$에서 두 초점까지의 거리의 합이 $2a$로 일정함을 수식으로 증명해 보자.
+2. 쌍곡선의 점근선 $y = \pm \frac{b}{a}x$는 천체의 미래 궤적 예측과 어떤 관련이 있는가?
+""")
+
+
+
+import streamlit as st
+import requests
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+
+# 페이지 설정
+st.set_page_config(page_title="이차곡선 방정식 모델링", layout="wide")
+
+@st.cache_data
+def fetch_neo_data():
+    """NASA API에서 소행성의 궤도 파라미터(a, e)만 추출합니다."""
+    url = "https://api.nasa.gov/neo/rest/v1/neo/browse?api_key=DEMO_KEY"
+    try:
+        response = requests.get(url)
+        data = response.json()
+        neos = data.get('near_earth_objects', [])
+        
+        extracted_data = []
+        for neo in neos:
+            orbital = neo.get('orbital_data', {})
+            name = neo.get('name', 'Unknown')
+            e = float(orbital.get('eccentricity', 0))
+            a = float(orbital.get('semi_major_axis', 0))
+            
+            if a > 0:
+                extracted_data.append({'Name': name, 'e': e, 'a': a})
+        
+        df = pd.DataFrame(extracted_data)
+        
+        # 기하 수업의 쌍곡선 탐구를 위해 e > 1 데이터 추가 (a의 절댓값 사용)
+        df.loc[len(df)] = {'Name': 'Oumuamua (쌍곡선 궤도)', 'e': 1.1995, 'a': 1.29}
+        return df
+    except Exception as e:
+        st.error("데이터를 불러오는 중 오류가 발생했습니다.")
+        return pd.DataFrame()
 
 # 메인 UI
 st.title("📐 기하: 이차곡선 방정식과 궤도 모델링")
@@ -43,104 +143,104 @@ st.markdown("주어진 $a$(장반경)와 $e$(이심률) 데이터를 활용하�
 df = fetch_neo_data()
 
 if not df.empty:
-    st.sidebar.header("데이터 및 곡선 선택")
-    curve_type = st.sidebar.radio("탐색할 이차곡선:", ["타원 (0 < e < 1)", "쌍곡선 (e > 1)"])
-    
-    if curve_type == "타원 (0 < e < 1)":
-        filtered_df = df[(df['e'] > 0) & (df['e'] < 1)]
-        st.subheader("🟢 타원의 방정식 도출")
-    else:
-        filtered_df = df[df['e'] > 1]
-        st.subheader("🔴 쌍곡선의 방정식 도출")
+    st.sidebar.header("데이터 및 곡선 선택")
+    curve_type = st.sidebar.radio("탐색할 이차곡선:", ["타원 (0 < e < 1)", "쌍곡선 (e > 1)"])
+    
+    if curve_type == "타원 (0 < e < 1)":
+        filtered_df = df[(df['e'] > 0) & (df['e'] < 1)]
+        st.subheader("🟢 타원의 방정식 도출")
+    else:
+        filtered_df = df[df['e'] > 1]
+        st.subheader("🔴 쌍곡선의 방정식 도출")
 
-    if not filtered_df.empty:
-        selected_neo = st.sidebar.selectbox("분석할 데이터 선택:", filtered_df['Name'])
-        neo_info = filtered_df[filtered_df['Name'] == selected_neo].iloc[0]
-        
-        # 기하학적 파라미터
-        e = neo_info['e']
-        a = neo_info['a']
-        c = a * e  # 초점의 x좌표 (c)
-        
-        col1, col2 = st.columns([1, 1.2])
-        
-        with col1:
-            st.markdown("### 1. 파라미터 계산")
-            st.write(f"- **주어진 데이터:** 장축의 반 $a = {a:.4f}$, 이심률 $e = {e:.4f}$")
-            st.write(f"- **초점 좌표 계산:** 초점 $F(c, 0)$에서 $c = a \\times e = {c:.4f}$")
-            
-            st.markdown("### 2. 방정식 세우기")
-            if e < 1:
-                # 타원: a^2 = b^2 + c^2 -> b = sqrt(a^2 - c^2)
-                b = np.sqrt(a**2 - c**2)
-                st.write(f"- **단축의 반 계산:** $b = \\sqrt{{a^2 - c^2}} = {b:.4f}$")
-                st.markdown("#### 최종 타원의 방정식:")
-                st.latex(rf"\frac{{x^2}}{{{a**2:.4f}}} + \frac{{y^2}}{{{b**2:.4f}}} = 1")
-            else:
-                # 쌍곡선: c^2 = a^2 + b^2 -> b = sqrt(c^2 - a^2)
-                b = np.sqrt(c**2 - a**2)
-                st.write(f"- **켤레축의 반 계산:** $b = \\sqrt{{c^2 - a^2}} = {b:.4f}$")
-                st.markdown("#### 최종 쌍곡선의 방정식:")
-                st.latex(rf"\frac{{x^2}}{{{a**2:.4f}}} - \frac{{y^2}}{{{b**2:.4f}}} = 1")
-                st.markdown("#### 점근선의 방정식:")
-                st.latex(rf"y = \pm \frac{{{b:.4f}}}{{{a:.4f}}} x")
-                
-        with col2:
-            st.markdown("### 3. 좌표평면 시각화")
-            fig = go.Figure()
-            
-            # 수학적 좌표계 설정 (x축, y축)
-            fig.add_hline(y=0, line_width=1, line_color="black", opacity=0.5)
-            fig.add_vline(x=0, line_width=1, line_color="black", opacity=0.5)
-            
-            # 초점(F, F') 표시
-            fig.add_trace(go.Scatter(x=[c, -c], y=[0, 0], mode='markers+text', 
-                                     marker=dict(size=10, color='black'),
-                                     text=['F(c, 0)', "F'(-c, 0)"], textposition="top center", name='초점'))
-            
-            # 꼭짓점 표시
-            fig.add_trace(go.Scatter(x=[a, -a], y=[0, 0], mode='markers', 
-                                     marker=dict(size=8, color='gray', symbol='cross'), name='꼭짓점'))
+    if not filtered_df.empty:
+        selected_neo = st.sidebar.selectbox("분석할 데이터 선택:", filtered_df['Name'])
+        neo_info = filtered_df[filtered_df['Name'] == selected_neo].iloc[0]
+        
+        # 기하학적 파라미터
+        e = neo_info['e']
+        a = neo_info['a']
+        c = a * e  # 초점의 x좌표 (c)
+        
+        col1, col2 = st.columns([1, 1.2])
+        
+        with col1:
+            st.markdown("### 1. 파라미터 계산")
+            st.write(f"- **주어진 데이터:** 장축의 반 $a = {a:.4f}$, 이심률 $e = {e:.4f}$")
+            st.write(f"- **초점 좌표 계산:** 초점 $F(c, 0)$에서 $c = a \\times e = {c:.4f}$")
+            
+            st.markdown("### 2. 방정식 세우기")
+            if e < 1:
+                # 타원: a^2 = b^2 + c^2 -> b = sqrt(a^2 - c^2)
+                b = np.sqrt(a**2 - c**2)
+                st.write(f"- **단축의 반 계산:** $b = \\sqrt{{a^2 - c^2}} = {b:.4f}$")
+                st.markdown("#### 최종 타원의 방정식:")
+                st.latex(rf"\frac{{x^2}}{{{a**2:.4f}}} + \frac{{y^2}}{{{b**2:.4f}}} = 1")
+            else:
+                # 쌍곡선: c^2 = a^2 + b^2 -> b = sqrt(c^2 - a^2)
+                b = np.sqrt(c**2 - a**2)
+                st.write(f"- **켤레축의 반 계산:** $b = \\sqrt{{c^2 - a^2}} = {b:.4f}$")
+                st.markdown("#### 최종 쌍곡선의 방정식:")
+                st.latex(rf"\frac{{x^2}}{{{a**2:.4f}}} - \frac{{y^2}}{{{b**2:.4f}}} = 1")
+                st.markdown("#### 점근선의 방정식:")
+                st.latex(rf"y = \pm \frac{{{b:.4f}}}{{{a:.4f}}} x")
+                
+        with col2:
+            st.markdown("### 3. 좌표평면 시각화")
+            fig = go.Figure()
+            
+            # 수학적 좌표계 설정 (x축, y축)
+            fig.add_hline(y=0, line_width=1, line_color="black", opacity=0.5)
+            fig.add_vline(x=0, line_width=1, line_color="black", opacity=0.5)
+            
+            # 초점(F, F') 표시
+            fig.add_trace(go.Scatter(x=[c, -c], y=[0, 0], mode='markers+text', 
+                                     marker=dict(size=10, color='black'),
+                                     text=['F(c, 0)', "F'(-c, 0)"], textposition="top center", name='초점'))
+            
+            # 꼭짓점 표시
+            fig.add_trace(go.Scatter(x=[a, -a], y=[0, 0], mode='markers', 
+                                     marker=dict(size=8, color='gray', symbol='cross'), name='꼭짓점'))
 
-            # 곡선 그리기
-            if e < 1:
-                t = np.linspace(0, 2*np.pi, 200)
-                x_vals = a * np.cos(t)
-                y_vals = b * np.sin(t)
-                fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='lines', line=dict(color='blue', width=2), name='타원'))
-                
-                # 단축 꼭짓점 표시
-                fig.add_trace(go.Scatter(x=[0, 0], y=[b, -b], mode='markers', 
-                                         marker=dict(size=8, color='gray', symbol='cross'), showlegend=False))
-                
-                axis_range = [-a*1.5, a*1.5]
-            else:
-                t = np.linspace(-2.5, 2.5, 200)
-                # 쌍곡선 양쪽 가지
-                x_pos = a * np.cosh(t)
-                y_pos = b * np.sinh(t)
-                fig.add_trace(go.Scatter(x=x_pos, y=y_pos, mode='lines', line=dict(color='red', width=2), name='쌍곡선 (x>0)'))
-                fig.add_trace(go.Scatter(x=-x_pos, y=y_pos, mode='lines', line=dict(color='red', width=2), name='쌍곡선 (x<0)'))
-                
-                # 점근선 그리기 (y = b/a * x, y = -b/a * x)
-                x_asymp = np.array([-c*2, c*2])
-                fig.add_trace(go.Scatter(x=x_asymp, y=(b/a)*x_asymp, mode='lines', line=dict(color='green', dash='dash', width=1), name='점근선'))
-                fig.add_trace(go.Scatter(x=x_asymp, y=-(b/a)*x_asymp, mode='lines', line=dict(color='green', dash='dash', width=1), showlegend=False))
-                
-                axis_range = [-c*2, c*2]
+            # 곡선 그리기
+            if e < 1:
+                t = np.linspace(0, 2*np.pi, 200)
+                x_vals = a * np.cos(t)
+                y_vals = b * np.sin(t)
+                fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='lines', line=dict(color='blue', width=2), name='타원'))
+                
+                # 단축 꼭짓점 표시
+                fig.add_trace(go.Scatter(x=[0, 0], y=[b, -b], mode='markers', 
+                                         marker=dict(size=8, color='gray', symbol='cross'), showlegend=False))
+                
+                axis_range = [-a*1.5, a*1.5]
+            else:
+                t = np.linspace(-2.5, 2.5, 200)
+                # 쌍곡선 양쪽 가지
+                x_pos = a * np.cosh(t)
+                y_pos = b * np.sinh(t)
+                fig.add_trace(go.Scatter(x=x_pos, y=y_pos, mode='lines', line=dict(color='red', width=2), name='쌍곡선 (x>0)'))
+                fig.add_trace(go.Scatter(x=-x_pos, y=y_pos, mode='lines', line=dict(color='red', width=2), name='쌍곡선 (x<0)'))
+                
+                # 점근선 그리기 (y = b/a * x, y = -b/a * x)
+                x_asymp = np.array([-c*2, c*2])
+                fig.add_trace(go.Scatter(x=x_asymp, y=(b/a)*x_asymp, mode='lines', line=dict(color='green', dash='dash', width=1), name='점근선'))
+                fig.add_trace(go.Scatter(x=x_asymp, y=-(b/a)*x_asymp, mode='lines', line=dict(color='green', dash='dash', width=1), showlegend=False))
+                
+                axis_range = [-c*2, c*2]
 
-            fig.update_layout(
-                xaxis=dict(title='x', range=axis_range, zeroline=False),
-                yaxis=dict(title='y', scaleanchor="x", scaleratio=1, zeroline=False),
-                plot_bgcolor='white',
-                paper_bgcolor='white',
-                margin=dict(l=20, r=20, t=30, b=20)
-            )
-            # 그리드 추가
-            fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
-            fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
-            
-            st.plotly_chart(fig, use_container_width=True)
+            fig.update_layout(
+                xaxis=dict(title='x', range=axis_range, zeroline=False),
+                yaxis=dict(title='y', scaleanchor="x", scaleratio=1, zeroline=False),
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                margin=dict(l=20, r=20, t=30, b=20)
+            )
+            # 그리드 추가
+            fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
+            fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
+            
+            st.plotly_chart(fig, use_container_width=True)
 
 # --- 학생 탐구 질문 섹션 ---
 st.markdown("---")
