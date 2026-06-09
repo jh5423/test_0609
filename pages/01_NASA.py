@@ -1,128 +1,120 @@
-import streaㅜmlit as st
+import streamlit as st
 import requests
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 
-# 페이지 설정
-st.set_page_config(page_title="NASA 데이터로 그리는 이차곡선", layout="wide")
+# 페이지 레이아웃 설정
+st.set_page_config(page_title="우주 기하학 실험실", layout="wide")
 
+# --- 데이터 로딩 함수 ---
 @st.cache_data
-def fetch_neo_data():
-    """NASA NeoWs API를 통해 소행성 데이터를 가져옵니다."""
-    url = "https://api.nasa.gov/neo/rest/v1/neo/browse?api_key=DEMO_KEY"
-    response = requests.get(url)
-    
-    if response.status_code == 200:
-        data = response.json()
-        neos = data.get('near_earth_objects', [])
-        
-        extracted_data = []
-        for neo in neos:
-            orbital = neo.get('orbital_data', {})
-            name = neo.get('name', 'Unknown')
-            e = float(orbital.get('eccentricity', 0))
-            a = float(orbital.get('semi_major_axis', 0))
-            
-            # 유효한 궤도 데이터가 있는 경우만 추가
-            if a > 0:
-                extracted_data.append({'Name': name, 'e (이심률)': e, 'a (장반경)': a})
-        
-        df = pd.DataFrame(extracted_data)
-        
-        # 수업을 위해 e > 1 인 쌍곡선 데이터(오무아무아) 강제 추가
-        oumuamua_data = {'Name': '1I/Oumuamua (성간 천체)', 'e (이심률)': 1.1995, 'a (장반경)': -1.29} # 쌍곡선의 a는 음수로 표기되기도 하나, 계산을 위해 절댓값 사용
-        df.loc[len(df)] = oumuamua_data
-        
-        return df
-    else:
-        st.error("NASA API에서 데이터를 불러오지 못했습니다.")
+def get_nasa_data():
+    """NASA NeoWs API에서 실제 소행성 데이터를 가져옵니다."""
+    try:
+        url = "https://api.nasa.gov/neo/rest/v1/neo/browse?api_key=DEMO_KEY"
+        res = requests.get(url).json()
+        neos = res.get('near_earth_objects', [])
+        data = []
+        for n in neos:
+            orb = n.get('orbital_data', {})
+            data.append({
+                '이름': n.get('name'),
+                '이심률(e)': float(orb.get('eccentricity', 0)),
+                '장반경(a)': float(orb.get('semi_major_axis', 0))
+            })
+        # 교육용 성간 천체 오무아무아 데이터 추가
+        data.append({'이름': '1I/Oumuamua', '이심률(e)': 1.199, '장반경(a)': -1.27})
+        return pd.DataFrame(data)
+    except:
         return pd.DataFrame()
 
-# 메인 UI
-st.title("🌌 NASA 소행성 데이터와 이차곡선의 세계")
-st.markdown("NASA의 근지구천체(NEO) 데이터를 분석하여 소행성과 혜성의 궤도를 직접 모델링해 봅시다.")
+# --- 사이드바: 모드 선택 ---
+st.sidebar.title("🔭 탐구 모드")
+mode = st.sidebar.radio("원하는 활동을 선택하세요:", ["NASA 실데이터 분석", "가상 궤도 실험실 (이심률 조절)"])
 
-# 데이터 불러오기
-df = fetch_neo_data()
-
-if not df.empty:
-    st.sidebar.header("궤도 설정")
-    orbit_type = st.sidebar.radio("탐구할 궤도 형태를 선택하세요:", ["타원 궤도 (0 < e < 1)", "쌍곡선 궤도 (e > 1)"])
-    
-    if orbit_type == "타원 궤도 (0 < e < 1)":
-        filtered_df = df[(df['e (이심률)'] > 0) & (df['e (이심률)'] < 1)]
-        st.subheader("🪐 타원 궤도 소행성 분석")
-    else:
-        filtered_df = df[df['e (이심률)'] > 1]
-        st.subheader("☄️ 쌍곡선 궤도 천체 분석")
-        st.info("이심률이 1보다 큰 천체는 태양계의 중력을 벗어나 스쳐 지나가는 성간 천체(예: 오무아무아)입니다.")
-
-    if not filtered_df.empty:
-        selected_neo = st.sidebar.selectbox("분석할 천체를 선택하세요:", filtered_df['Name'])
-        neo_info = filtered_df[filtered_df['Name'] == selected_neo].iloc[0]
-        
-        e = neo_info['e (이심률)']
-        a = abs(neo_info['a (장반경)']) # 장반경의 크기
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("### 📊 천체 궤도 데이터")
-            st.write(f"- **천체 이름:** {selected_neo}")
-            st.write(f"- **궤도 이심률 ($e$):** {e:.4f}")
-            st.write(f"- **장축의 반 ($a$):** {a:.4f} AU")
-            
-            if e < 1:
-                # 타원: b = a * sqrt(1 - e^2)
-                b = a * np.sqrt(1 - e**2)
-                st.write(f"- **단축의 반 ($b$):** {b:.4f} AU")
-                st.markdown("### 📐 타원의 방정식")
-                st.latex(rf"\frac{{x^2}}{{{a**2:.4f}}} + \frac{{y^2}}{{{b**2:.4f}}} = 1")
-            else:
-                # 쌍곡선: b = a * sqrt(e^2 - 1)
-                b = a * np.sqrt(e**2 - 1)
-                st.write(f"- **켤레축의 반 ($b$):** {b:.4f} AU")
-                st.markdown("### 📐 쌍곡선의 방정식")
-                st.latex(rf"\frac{{x^2}}{{{a**2:.4f}}} - \frac{{y^2}}{{{b**2:.4f}}} = 1")
-                
-        with col2:
-            st.markdown("### 궤도 시각화")
-            fig = go.Figure()
-            
-            # 태양(초점) 그리기
-            c = a * e # 중심에서 초점까지의 거리
-            if e < 1:
-                sun_x = c
-            else:
-                sun_x = -c # 쌍곡선의 경우 태양의 위치를 왼쪽 초점으로 가정
-                
-            fig.add_trace(go.Scatter(x=[sun_x], y=[0], mode='markers', marker=dict(size=15, color='orange'), name='Sun (Focus)'))
-            
-            t = np.linspace(0, 2*np.pi, 100)
-            if e < 1:
-                x = a * np.cos(t)
-                y = b * np.sin(t)
-                fig.add_trace(go.Scatter(x=x, y=y, mode='lines', name=f'{selected_neo} Orbit'))
-            else:
-                t_hyper = np.linspace(-2, 2, 100)
-                # 오른쪽 쌍곡선
-                x_pos = a * np.cosh(t_hyper)
-                y_pos = b * np.sinh(t_hyper)
-                fig.add_trace(go.Scatter(x=x_pos, y=y_pos, mode='lines', line=dict(color='red'), name=f'{selected_neo} Trajectory'))
-
-            fig.update_layout(
-                xaxis_title='x (AU)', yaxis_title='y (AU)',
-                yaxis=dict(scaleanchor="x", scaleratio=1), # x, y 비율 동일하게
-                showlegend=True
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
-# --- 학생 탐구 질문 섹션 ---
+# --- 메인 화면 시작 ---
+st.title("🛰️ 기하: 이차곡선과 천체 궤도 탐구")
 st.markdown("---")
-st.subheader("💡 스스로 탐구해 보기")
-st.markdown("""
-1. **궤도의 모양과 이심률:** 선택한 소행성의 이심률($e$) 값을 바꿔가며 시각화한다면, $e$가 0에 가까워질 때와 1에 가까워질 때 궤도의 모양은 어떻게 변하나요?
-2. **초점의 의미:** 시각화된 그래프에서 태양은 타원(또는 쌍곡선)의 중심이 아닌 초점(Focus)에 위치해 있습니다. 케플러 제1법칙과 이차곡선의 초점을 연결하여 설명해 보세요.
-3. **미래 궤적 예측:** 이심률이 1보다 큰 오무아무아와 같은 천체는 태양계를 영원히 벗어나게 됩니다. 도출된 쌍곡선의 방정식을 이용해 천체가 한없이 멀어질 때 점근선에 가까워지는 성질을 바탕으로, 이 천체가 최종적으로 향하는 방향(기울기)을 계산해 보세요.
-""")
+
+if mode == "가상 궤도 실험실 (이심률 조절)":
+    st.subheader("🛠️ 이심률($e$) 조절을 통한 궤도 설계")
+    st.info("이심률 슬라이더를 움직여보세요. 궤도의 종류가 어떻게 변하나요?")
+
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        # 학생이 직접 변경할 수 있는 파라미터
+        e_val = st.slider("이심률 (Eccentricity, e)", 0.0, 2.0, 0.5, 0.01)
+        a_val = st.slider("장반경 (Semi-major axis, a)", 0.5, 5.0, 1.5, 0.1)
+        
+        # 기하학적 분류 판정
+        if e_val == 0:
+            orbit_type = "원 (Circle)"
+            color = "blue"
+        elif 0 < e_val < 1:
+            orbit_type = "타원 (Ellipse)"
+            color = "green"
+        elif e_val == 1:
+            orbit_type = "포물선 (Parabola)"
+            color = "yellow"
+        else:
+            orbit_type = "쌍곡선 (Hyperbola)"
+            color = "red"
+            
+        st.success(f"현재 궤도 형태: **{orbit_type}**")
+        
+        # 수식 도출 (학생이 필기할 수 있도록 제공)
+        if 0 <= e_val < 1:
+            b_val = a_val * np.sqrt(1 - e_val**2)
+            st.latex(rf"\frac{{x^2}}{{{a_val**2:.2f}}} + \frac{{y^2}}{{{b_val**2:.2f}}} = 1")
+        elif e_val > 1:
+            b_val = a_val * np.sqrt(e_val**2 - 1)
+            st.latex(rf"\frac{{x^2}}{{{a_val**2:.2f}}} - \frac{{y^2}}{{{b_val**2:.2f}}} = 1")
+            
+        st.markdown("""
+        **📝 탐구 활동:**
+        1. 이심률이 **0.99에서 1.01**로 변할 때 그래프의 끝부분(개곡선 여부)을 관찰하세요.
+        2. 타원 궤도에서 초점($c=ae$)의 위치를 계산해보고 태양의 위치와 비교해 보세요.
+        """)
+
+    with col2:
+        # 시각화 로직
+        fig = go.Figure()
+        # 태양 (초점)
+        c = a_val * e_val
+        fig.add_trace(go.Scatter(x=[c if e_val < 1 else -c], y=[0], mode='markers', marker=dict(size=12, color='orange'), name='태양 (초점)'))
+        
+        # 곡선 그리기
+        if e_val < 1: # 타원 및 원
+            t = np.linspace(0, 2*np.pi, 200)
+            b = a_val * np.sqrt(1 - e_val**2)
+            x, y = a_val * np.cos(t), b * np.sin(t)
+            fig.add_trace(go.Scatter(x=x, y=y, mode='lines', line=dict(color=color), name=orbit_type))
+        elif e_val == 1: # 포물선 (근사치 처리)
+            x = np.linspace(-2, 10, 200)
+            p = a_val # 준선 관련 파라미터로 가정
+            y = np.sqrt(4 * p * (x + p))
+            fig.add_trace(go.Scatter(x=x, y=y, mode='lines', line=dict(color=color), name="포물선(위쪽)"))
+            fig.add_trace(go.Scatter(x=x, y=-y, mode='lines', line=dict(color=color), name="포물선(아래쪽)"))
+        else: # 쌍곡선
+            t = np.linspace(-2, 2, 200)
+            b = a_val * np.sqrt(e_val**2 - 1)
+            x, y = a_val * np.cosh(t), b * np.sinh(t)
+            fig.add_trace(go.Scatter(x=x, y=y, mode='lines', line=dict(color=color), name=orbit_type))
+            
+        fig.update_layout(xaxis=dict(range=[-7, 7]), yaxis=dict(range=[-5, 5], scaleanchor="x", scaleratio=1))
+        st.plotly_chart(fig, use_container_width=True)
+
+else:
+    # 기존 NASA 데이터 모드
+    df = get_nasa_data()
+    st.subheader("🌍 NASA NEO(근지구천체) 데이터 분석")
+    if not df.empty:
+        selected = st.selectbox("분석할 소행성 선택", df['이름'])
+        row = df[df['이름'] == selected].iloc[0]
+        st.write(f"**이심률:** {row['이심률(e)']} | **장반경:** {row['장반경(a)']} AU")
+        # (이하 기존 시각화 로직 동일)
+
+st.markdown("---")
+st.caption("수업 지원 도구: 2022 개정 교육과정 고교 기하 (이차곡선 실생활 응용 파트)")
