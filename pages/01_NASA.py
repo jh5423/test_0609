@@ -98,12 +98,6 @@ st.markdown("""
 
 
 
-import streamlit as st
-import requests
-import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
-
 # 페이지 설정
 st.set_page_config(page_title="이차곡선 방정식 모델링", layout="wide")
 
